@@ -1,15 +1,19 @@
 #!/usr/bin/python
 
-import requests
+import requests, re
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-engine = create_engine('mysql+oursql://root:admin@127.0.0.1:1521/SAMMYEMPTY', echo=True)
+engine = create_engine('mysql+oursql://root:admin@127.0.0.1:1521/SAMMYEMPTY', echo=False)
 Base = declarative_base(engine)
 
 class Houseunit(Base):
     __tablename__ = 'SAM_HOUSEUNITS'
+    __table_args__ = {'autoload':True}
+
+class Area(Base):
+    __tablename__ = 'SAM_AREA'
     __table_args__ = {'autoload':True}
 
 class Kommune(Base):
@@ -40,80 +44,106 @@ def importCommuneInformation(session):
     session.add_all(communes)
     session.commit()
 
+def importDistrictInformation(session):
+    districts = []
+
+    response = requests.get('http://dawa.aws.dk/kommuner')
+    data = response.json()
+
+    for element in data:
+        area = Area()
+
+        area.AREATYPEID = 'KOM'
+        area.AREANAME = element['navn']
+        area.AREACODE = element['kode']
+        area.KOMMUNEID = element['kode']
+        area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
+
+        districts.append(area)
+
+    response = requests.get('http://dawa.aws.dk/sogne')
+    data = response.json()
+
+    for element in data:
+        area = Area()
+
+        area.AREATYPEID = 'SOGN'
+        area.AREANAME = element['navn']
+        area.AREACODE = element['kode']
+        area.KOMMUNEID = element['kode']
+        area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
+
+        districts.append(area)
+
+    response = requests.get('http://dawa.aws.dk/postnumre')
+    data = response.json()
+
+    for element in data:
+        area = Area()
+
+        area.AREATYPEID = 'POST'
+        area.AREANAME = element['navn']
+        area.AREACODE = element['nr']
+        area.KOMMUNEID = element['kommuner'][0]['kode']
+        area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
+
+        districts.append(area)
+
+    session.add_all(districts)
+    session.commit()
+
 def importAdressInformation(session):
     communes = session.query(Kommune).all()
-
-    def insertHouseunit(address):
-        uuid = address['id']
-        communeID = address['kommune']['kode']
-        roadID = address['vejstykke']['kode']
-        houseID = address['husnr']
-        # equalno
-        x = address['adgangspunkt']['koordinater'][0]
-        y = address['adgangspunkt']['koordinater'][1]
-        doorcount = 1
-        sognenr = address['sogn']['kode']
-        zip = address['postnummer']['nr']
-        sognenavn = address['sogn']['navn']
-
-        houseunit = Houseunit()
-        houseunit.ADGANGSADRESSE_UUID = uuid
-        houseunit.KOMMUNEID = communeID
-        houseunit.ROADID = roadID
-        houseunit.HOUSEID = houseID
-        houseunit.X = x
-        houseunit.Y = y
-        houseunit.DOORCOUNT = doorcount
-        houseunit.SOGNENR = sognenr
-        houseunit.ZIP = zip
-        houseunit.SOGNENAVN = sognenavn
-
-        session.add(houseunit)
-        session.commit()
 
     def getAddressesInCommune(commune):
         url = 'http://dawa.aws.dk/adresser'
         #parameters = {'kommunekode': commune.id}
         headers = {'Accept-Encoding': 'gzip, deflate'}
 
-        response = requests.get(url, params={'kommunekode': '0430'}, headers=headers)
+        response = requests.get(url, params={'kommunekode': '101'}, headers=headers)
         return response.json()
 
-    addressData = getAddressesInCommune(None)
+    addresses = getAddressesInCommune(None)
 
-    id = addressData[0]["adgangsadresse"]['id']
+    for address in addresses:
+        accessAddress = address["adgangsadresse"]
+        houseunit = session.query(Houseunit).filter_by(ADGANGSADRESSE_UUID = accessAddress['id']).first()
+        if houseunit is None:
+            try:
+                houseunit = Houseunit()
 
-    result = session.query(Houseunit).filter_by(ADGANGSADRESSE_UUID = id).first()
+                houseunit.ADGANGSADRESSE_UUID = accessAddress['id']
+                houseunit.KOMMUNEID = accessAddress['kommune']['kode']
+                houseunit.ROADID = accessAddress['vejstykke']['kode']
 
-    address = addressData[0]["adgangsadresse"]
+                houseID = accessAddress['husnr']
+                houseunit.HOUSEID = houseID
 
-    def incrementDoorCountForHouseunit(address):
-        result = session.query(Houseunit).filter_by(ADGANGSADRESSE_UUID = address['id']).first()
-        result.DOORCOUNT = result.DOORCOUNT + 1
+                houseNumber = re.findall(r'\d+', houseID)[0]
+                houseunit.EQUALNO = int(houseNumber) % 2
+
+                coordinates = accessAddress['adgangspunkt']['koordinater']
+                houseunit.X = coordinates[0]
+                houseunit.Y = coordinates[1]
+
+                houseunit.DOORCOUNT = 1
+                houseunit.SOGNENR = accessAddress['sogn']['kode']
+                houseunit.ZIP = accessAddress['postnummer']['nr']
+                houseunit.SOGNENAVN = accessAddress['sogn']['navn']
+
+                session.add(houseunit)
+            except:
+                # Log error
+                continue
+        else:
+            houseunit.DOORCOUNT = houseunit.DOORCOUNT + 1
+
         session.commit()
-
-    if result is None:
-        insertHouseunit(address)
-    else:
-        incrementDoorCountForHouseunit(address)
-
-
-
-    def insertOrUpdateHouseunits(address):
-#check uuid if it exists if it does update else insert
-        session.query(Houseunit).filter_by(ADGANGSADRESSE_UUID = address['adgangsadresse']['id'])
-
-
-# is already in table?
-#no? insert
-#yes? update doorcount by one
-
-#sam area
-
 
 def main():
     session = loadSession()
     #importCommuneInformation(session)
+    #importDistrictInformation(session)
     importAdressInformation(session)
 
 if __name__ == "__main__":
