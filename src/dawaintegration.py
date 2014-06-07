@@ -93,53 +93,56 @@ def importDistrictInformation(session):
     session.commit()
 
 def importAdressInformation(session):
-    communes = session.query(Kommune).all()
-
     def getAddressesInCommune(commune):
         url = 'http://dawa.aws.dk/adresser'
-        #parameters = {'kommunekode': commune.id}
+        parameters = {'kommunekode': commune.id}
         headers = {'Accept-Encoding': 'gzip, deflate'}
 
-        response = requests.get(url, params={'kommunekode': '101'}, headers=headers)
+        response = requests.get(url, params=parameters, headers=headers)
+		
         return response.json()
 
-    addresses = getAddressesInCommune(None)
+	def processAddresses(addresses):
+		for address in addresses:
+			accessAddress = address["adgangsadresse"]
+			houseunit = session.query(Houseunit).filter_by(ADGANGSADRESSE_UUID = accessAddress['id']).first()
+			if houseunit is None:
+				try:
+					houseunit = Houseunit()
 
-    for address in addresses:
-        accessAddress = address["adgangsadresse"]
-        houseunit = session.query(Houseunit).filter_by(ADGANGSADRESSE_UUID = accessAddress['id']).first()
-        if houseunit is None:
-            try:
-                houseunit = Houseunit()
+					houseunit.ADGANGSADRESSE_UUID = accessAddress['id']
+					houseunit.KOMMUNEID = accessAddress['kommune']['kode']
+					houseunit.ROADID = accessAddress['vejstykke']['kode']
 
-                houseunit.ADGANGSADRESSE_UUID = accessAddress['id']
-                houseunit.KOMMUNEID = accessAddress['kommune']['kode']
-                houseunit.ROADID = accessAddress['vejstykke']['kode']
+					houseID = accessAddress['husnr']
+					houseunit.HOUSEID = houseID
 
-                houseID = accessAddress['husnr']
-                houseunit.HOUSEID = houseID
+					houseNumber = re.findall(r'\d+', houseID)[0]
+					houseunit.EQUALNO = int(houseNumber) % 2
 
-                houseNumber = re.findall(r'\d+', houseID)[0]
-                houseunit.EQUALNO = int(houseNumber) % 2
+					coordinates = accessAddress['adgangspunkt']['koordinater']
+					houseunit.X = coordinates[0]
+					houseunit.Y = coordinates[1]
 
-                coordinates = accessAddress['adgangspunkt']['koordinater']
-                houseunit.X = coordinates[0]
-                houseunit.Y = coordinates[1]
+					houseunit.DOORCOUNT = 1
+					houseunit.SOGNENR = accessAddress['sogn']['kode']
+					houseunit.ZIP = accessAddress['postnummer']['nr']
+					houseunit.SOGNENAVN = accessAddress['sogn']['navn']
 
-                houseunit.DOORCOUNT = 1
-                houseunit.SOGNENR = accessAddress['sogn']['kode']
-                houseunit.ZIP = accessAddress['postnummer']['nr']
-                houseunit.SOGNENAVN = accessAddress['sogn']['navn']
+					session.add(houseunit)
+				except:
+					continue
+			else:
+				houseunit.DOORCOUNT = houseunit.DOORCOUNT + 1
 
-                session.add(houseunit)
-            except:
-                # Log error
-                continue
-        else:
-            houseunit.DOORCOUNT = houseunit.DOORCOUNT + 1
+			session.commit()
 
-        session.commit()
-
+	communes = session.query(Kommune).all()
+	
+	for commune in communes:
+		addresses = getAddressesInCommune(commune)
+		processAddresses(addresses)
+		
 def main():
     session = loadSession()
     #importCommuneInformation(session)
