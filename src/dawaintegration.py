@@ -1,4 +1,16 @@
 #!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+"""DAWA integration
+
+Usage:
+  dawaintegration.py [--chunksize=<size>]
+
+Options:
+  -h --help     Show this screen.
+  --chunksize=<size>  size of the data chunks that will be requested from DAWA [default: 10000].
+"""
+from docopt import docopt
 
 import requests, re
 from sqlalchemy import create_engine
@@ -26,7 +38,7 @@ class Kommune(Base):
 
 def loadSession():
     metadata = Base.metadata
-    Session = sessionmaker(bind=engine)
+    Session = sessionmaker(bind=engine, autocommit=False, autoflush=True)
     session = Session()
 
     return session
@@ -92,62 +104,77 @@ def importDistrictInformation(session):
     session.add_all(districts)
     session.commit()
 
-def importAdressInformation(session):
-    def getAddressesInCommune(commune):
-        url = 'http://dawa.aws.dk/adresser'
-        parameters = {'kommunekode': commune.id}
-        headers = {'Accept-Encoding': 'gzip, deflate'}
+def getAddressChunksInCommune(commune, pageNumber, chunkSize):
+    url = 'http://dawa.aws.dk/adresser'
+    parameters = {'kommunekode': '0430', 'side': pageNumber, 'per_side': chunkSize}
+    headers = {'Accept-Encoding': 'gzip, deflate'}
 
-        response = requests.get(url, params=parameters, headers=headers)
-		
-        return response.json()
+    response = requests.get(url, params=parameters, headers=headers)
 
-	def processAddresses(addresses):
-		for address in addresses:
-			accessAddress = address["adgangsadresse"]
-			houseunit = session.query(Houseunit).filter_by(ADGANGSADRESSE_UUID = accessAddress['id']).first()
-			if houseunit is None:
-				try:
-					houseunit = Houseunit()
+    return response.json()
 
-					houseunit.ADGANGSADRESSE_UUID = accessAddress['id']
-					houseunit.KOMMUNEID = accessAddress['kommune']['kode']
-					houseunit.ROADID = accessAddress['vejstykke']['kode']
+@profile
+def processAddresses(addresses):
+    session = loadSession()
+    
+    for address in addresses:
+        accessAddress = address["adgangsadresse"]
+        houseunit = session.query(Houseunit).filter_by(ADGANGSADRESSE_UUID = accessAddress['id']).first()
+        if houseunit is None:
+            try:
+                houseunit = Houseunit()
 
-					houseID = accessAddress['husnr']
-					houseunit.HOUSEID = houseID
+                houseunit.ADGANGSADRESSE_UUID = accessAddress['id']
+                houseunit.KOMMUNEID = accessAddress['kommune']['kode']
+                houseunit.ROADID = accessAddress['vejstykke']['kode']
 
-					houseNumber = re.findall(r'\d+', houseID)[0]
-					houseunit.EQUALNO = int(houseNumber) % 2
+                houseID = accessAddress['husnr']
+                houseunit.HOUSEID = houseID
 
-					coordinates = accessAddress['adgangspunkt']['koordinater']
-					houseunit.X = coordinates[0]
-					houseunit.Y = coordinates[1]
+                houseNumber = re.findall(r'\d+', houseID)[0]
+                houseunit.EQUALNO = int(houseNumber) % 2
 
-					houseunit.DOORCOUNT = 1
-					houseunit.SOGNENR = accessAddress['sogn']['kode']
-					houseunit.ZIP = accessAddress['postnummer']['nr']
-					houseunit.SOGNENAVN = accessAddress['sogn']['navn']
+                coordinates = accessAddress['adgangspunkt']['koordinater']
+                houseunit.X = coordinates[0]
+                houseunit.Y = coordinates[1]
 
-					session.add(houseunit)
-				except:
-					continue
-			else:
-				houseunit.DOORCOUNT = houseunit.DOORCOUNT + 1
+                houseunit.DOORCOUNT = 1
+                houseunit.SOGNENR = accessAddress['sogn']['kode']
+                houseunit.ZIP = accessAddress['postnummer']['nr']
+                houseunit.SOGNENAVN = accessAddress['sogn']['navn']
 
-			session.commit()
+                session.add(houseunit)
+            except:
+                continue
+        else:
+            houseunit.DOORCOUNT = houseunit.DOORCOUNT + 1
+        
+    session.commit()
 
-	communes = session.query(Kommune).all()
-	
-	for commune in communes:
-		addresses = getAddressesInCommune(commune)
-		processAddresses(addresses)
-		
-def main():
+@profile
+def importAddressInformation(session, chunkSize):
+    communes = session.query(Kommune).all()
+
+    communes = [1]
+
+    pageNumber = 1
+    for commune in communes:
+        while True:
+            addresses = getAddressChunksInCommune(commune, pageNumber, chunkSize)
+
+            if len(addresses) == 0:
+                break
+            pageNumber = pageNumber + 1
+
+            processAddresses(addresses)
+
+def main(args):
     session = loadSession()
     #importCommuneInformation(session)
     #importDistrictInformation(session)
-    importAdressInformation(session)
+    importAddressInformation(session, args['--chunksize'])
+    session.close()
 
 if __name__ == "__main__":
-    main()
+    arguments = docopt(__doc__)
+    main(arguments)
