@@ -5,20 +5,25 @@
 
 Usage:
   dawaintegration.py [--chunksize=<size>]
+  dawaintegration.py [--maxworkercount=<count>]
 
 Options:
   -h --help     Show this screen.
   --chunksize=<size>  size of the data chunks that will be requested from DAWA [default: 10000].
+  --maxworkercount=<count>  the maximum number of workers isnerting records into the database [default: 3].
 """
 from docopt import docopt
 
-import requests, re
+import requests, re, time, threading
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from threading import *
 
 engine = create_engine('mysql+oursql://root:admin@127.0.0.1:1521/SAMMYEMPTY', echo=False)
 Base = declarative_base(engine)
+metadata = Base.metadata
+Session = sessionmaker(bind=engine, autocommit=False, autoflush=True)
 
 class Houseunit(Base):
     __tablename__ = 'SAM_HOUSEUNITS'
@@ -36,14 +41,9 @@ class Kommune(Base):
         self.id = id
         self.name = name
 
-def loadSession():
-    metadata = Base.metadata
-    Session = sessionmaker(bind=engine, autocommit=False, autoflush=True)
+def importCommuneInformation():
     session = Session()
 
-    return session
-
-def importCommuneInformation(session):
     response = requests.get('http://dawa.aws.dk/kommuner')
     data = response.json()
 
@@ -56,7 +56,10 @@ def importCommuneInformation(session):
     session.add_all(communes)
     session.commit()
 
-def importDistrictInformation(session):
+    session.close()
+
+def importDistrictInformation():
+    session = Session()
     districts = []
 
     response = requests.get('http://dawa.aws.dk/kommuner')
@@ -104,19 +107,18 @@ def importDistrictInformation(session):
     session.add_all(districts)
     session.commit()
 
+    session.close()
+
 def getAddressChunksInCommune(commune, pageNumber, chunkSize):
     url = 'http://dawa.aws.dk/adresser'
-    parameters = {'kommunekode': '0430', 'side': pageNumber, 'per_side': chunkSize}
+    parameters = {'kommunekode': commune.id, 'side': pageNumber, 'per_side': chunkSize}
     headers = {'Accept-Encoding': 'gzip, deflate'}
 
     response = requests.get(url, params=parameters, headers=headers)
 
     return response.json()
 
-@profile
-def processAddresses(addresses):
-    session = loadSession()
-    
+def processAddresses(addresses, session):
     for address in addresses:
         accessAddress = address["adgangsadresse"]
         houseunit = session.query(Houseunit).filter_by(ADGANGSADRESSE_UUID = accessAddress['id']).first()
@@ -148,32 +150,49 @@ def processAddresses(addresses):
                 continue
         else:
             houseunit.DOORCOUNT = houseunit.DOORCOUNT + 1
-        
+
     session.commit()
 
-@profile
-def importAddressInformation(session, chunkSize):
+    session.close()
+
+def importAddressInformation(maxWorkerCount, chunkSize):
+    session = Session()
+
     communes = session.query(Kommune).all()
 
-    communes = [1]
+    workers = []
+    def removeDeadWorkers(waitTime):
+        while len(workers) >= maxWorkerCount:
+            time.sleep(waitTime)
+            [workers.remove(w) for w in workers[:] if not w.isAlive()]
 
     pageNumber = 1
     for commune in communes:
-        while True:
-            addresses = getAddressChunksInCommune(commune, pageNumber, chunkSize)
 
-            if len(addresses) == 0:
+        while True:
+            addressData = getAddressChunksInCommune(commune, pageNumber, chunkSize)
+
+            removeDeadWorkers(1)
+
+            worker = threading.Thread(target=processAddresses, args=(addressData, Session()))
+            workers.append(worker)
+            worker.daemon = True
+            worker.start()
+
+            if len(addressData) == 0:
                 break
             pageNumber = pageNumber + 1
 
-            processAddresses(addresses)
+    removeDeadWorkers(3)
+
+    session.close()
 
 def main(args):
-    session = loadSession()
-    #importCommuneInformation(session)
-    #importDistrictInformation(session)
-    importAddressInformation(session, args['--chunksize'])
-    session.close()
+    maxWorkerCount = int(arguments['--maxworkercount'])
+
+    importCommuneInformation()
+    importDistrictInformation()
+    importAddressInformation(maxWorkerCount, args['--chunksize'])
 
 if __name__ == "__main__":
     arguments = docopt(__doc__)
