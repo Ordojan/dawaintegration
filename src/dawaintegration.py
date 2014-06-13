@@ -14,13 +14,19 @@ Options:
 """
 from docopt import docopt
 
-import requests, re, time, threading
+import requests
+import re
+import time
+import threading
+import config
+import logging
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from threading import *
 
-engine = create_engine('mysql+oursql://root:admin@127.0.0.1:1521/SAMMYEMPTY', echo=False)
+mainLogger = logging.getLogger('dawaintegration')
+
+engine = create_engine(config.DB_URL, echo=False)
 Base = declarative_base(engine)
 metadata = Base.metadata
 Session = sessionmaker(bind=engine, autocommit=False, autoflush=True)
@@ -44,7 +50,7 @@ class Kommune(Base):
 def importCommuneInformation():
     session = Session()
 
-    response = requests.get('http://dawa.aws.dk/kommuner')
+    response = requests.get(config.SERVER_URL + 'kommuner')
     data = response.json()
 
     communes = []
@@ -62,7 +68,7 @@ def importDistrictInformation():
     session = Session()
     districts = []
 
-    response = requests.get('http://dawa.aws.dk/kommuner')
+    response = requests.get(SERVER_URL + 'kommuner')
     data = response.json()
 
     for element in data:
@@ -76,7 +82,7 @@ def importDistrictInformation():
 
         districts.append(area)
 
-    response = requests.get('http://dawa.aws.dk/sogne')
+    response = requests.get(config.SERVER_URL + 'sogne')
     data = response.json()
 
     for element in data:
@@ -90,7 +96,7 @@ def importDistrictInformation():
 
         districts.append(area)
 
-    response = requests.get('http://dawa.aws.dk/postnumre')
+    response = requests.get(config.SERVER_URL + 'postnumre')
     data = response.json()
 
     for element in data:
@@ -99,6 +105,7 @@ def importDistrictInformation():
         area.AREATYPEID = 'POST'
         area.AREANAME = element['navn']
         area.AREACODE = element['nr']
+# TODO fix this error
         area.KOMMUNEID = element['kommuner'][0]['kode']
         area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
 
@@ -110,7 +117,7 @@ def importDistrictInformation():
     session.close()
 
 def getAddressChunksInCommune(commune, pageNumber, chunkSize):
-    url = 'http://dawa.aws.dk/adresser'
+    url = config.SERVER_URL + 'adresser'
     parameters = {'kommunekode': commune.id, 'side': pageNumber, 'per_side': chunkSize}
     headers = {'Accept-Encoding': 'gzip, deflate'}
 
@@ -190,9 +197,11 @@ def importAddressInformation(maxWorkerCount, chunkSize):
 def main(args):
     maxWorkerCount = int(arguments['--maxworkercount'])
 
-    importCommuneInformation()
-    importDistrictInformation()
-    importAddressInformation(maxWorkerCount, args['--chunksize'])
+    mainLogger.info('Application arguments: \n{0}'.format(args))
+
+    #importCommuneInformation()
+    #importDistrictInformation()
+    #importAddressInformation(maxWorkerCount, args['--chunksize'])
 
 if __name__ == "__main__":
     arguments = docopt(__doc__)
