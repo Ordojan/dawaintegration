@@ -185,13 +185,19 @@ def processAddresses(addresses, session):
                 houseunit.Y = coordinates[1]
 
                 houseunit.DOORCOUNT = 1
-                houseunit.SOGNENR = accessAddress['sogn']['kode']
                 houseunit.ZIP = accessAddress['postnummer']['nr']
-                houseunit.SOGNENAVN = accessAddress['sogn']['navn']
+
+                if accessAddress['sogn'] is None:
+                    houseunit.SOGNENR = 9999
+                    houseunit.SOGNENAVN = 'Ukendt (Sogn) Sogn'
+                else:
+                    houseunit.SOGNENR = accessAddress['sogn']['kode']
+                    houseunit.SOGNENAVN = accessAddress['sogn']['navn']
 
                 session.add(houseunit)
             except:
                 logger.error('Encountered erroneous record with "adgangsadresse id" of {0}'.format(accessAddress['id']))
+                logger.error(accessAddress)
                 continue
         else:
             houseunit.DOORCOUNT = houseunit.DOORCOUNT + 1
@@ -219,8 +225,9 @@ def importAddressInformation(maxWorkerCount, chunkSize):
             [workers.remove(w) for w in workers[:] if not w.isAlive()]
 
     for commune in communes:
-        pageNumber = 1
         mainLogger.debug('Importing address data for "{0}" commune.'.format(commune.name.encode('utf-8')))
+
+        pageNumber = 1
 
         while True:
             addressData = getAddressChunksInCommune(commune, pageNumber, chunkSize)
