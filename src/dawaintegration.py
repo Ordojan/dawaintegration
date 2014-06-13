@@ -48,6 +48,8 @@ class Kommune(Base):
         self.name = name
 
 def importCommuneInformation():
+    mainLogger.debug('Starting the commune import procedure.')
+
     session = Session()
 
     response = requests.get(config.SERVER_URL + 'kommuner')
@@ -59,16 +61,24 @@ def importCommuneInformation():
         name = element['navn']
         communes.append(Kommune(id, name))
 
+    mainLogger.debug('{0} communes found.'.format(len(communes)))
+
     session.add_all(communes)
     session.commit()
 
     session.close()
 
-def importDistrictInformation():
+    mainLogger.debug('Ending the commune import procedure.')
+
+def importAreaInformation():
+    mainLogger.debug('Starting the area import procedure.')
+
     session = Session()
     districts = []
 
-    response = requests.get(SERVER_URL + 'kommuner')
+    mainLogger.debug('Importing communes...')
+
+    response = requests.get(config.SERVER_URL + 'kommuner')
     data = response.json()
 
     for element in data:
@@ -81,6 +91,10 @@ def importDistrictInformation():
         area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
 
         districts.append(area)
+
+    mainLogger.debug('Done.')
+
+    mainLogger.debug('Importing parishes...')
 
     response = requests.get(config.SERVER_URL + 'sogne')
     data = response.json()
@@ -95,6 +109,10 @@ def importDistrictInformation():
         area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
 
         districts.append(area)
+
+    mainLogger.debug('Done.')
+
+    mainLogger.debug('Importing postal numbers...')
 
     response = requests.get(config.SERVER_URL + 'postnumre')
     data = response.json()
@@ -111,19 +129,36 @@ def importDistrictInformation():
 
         districts.append(area)
 
+    mainLogger.debug('Done.')
+
+    mainLogger.debug('{0} areas found.'.format(len(districts)))
+
     session.add_all(districts)
     session.commit()
 
     session.close()
 
+    mainLogger.debug('Ending the area import procedure.')
+
 def getAddressChunksInCommune(commune, pageNumber, chunkSize):
+    mainLogger.debug('Starting the procedure to query a chunk of address data.')
+    mainLogger.debug('Commune id: {0}'.format(commune.id))
+    mainLogger.debug('Commune name: {0}'.format(commune.name.encode('utf-8')))
+    mainLogger.debug('Page number: {0}'.format(pageNumber))
+    mainLogger.debug('Chunk size: {0}'.format(chunkSize))
+
     url = config.SERVER_URL + 'adresser'
     parameters = {'kommunekode': commune.id, 'side': pageNumber, 'per_side': chunkSize}
     headers = {'Accept-Encoding': 'gzip, deflate'}
 
     response = requests.get(url, params=parameters, headers=headers)
 
-    return response.json()
+    output = response.json()
+
+    mainLogger.debug('{0} records found.'.format(len(output)))
+    mainLogger.debug('Ending the procedure to query a chunk of address data.')
+
+    return output
 
 def processAddresses(addresses, session):
     for address in addresses:
@@ -163,23 +198,31 @@ def processAddresses(addresses, session):
     session.close()
 
 def importAddressInformation(maxWorkerCount, chunkSize):
+    mainLogger.debug('Starting the address import procedure.')
+
     session = Session()
 
     communes = session.query(Kommune).all()
 
+    mainLogger.debug('Found {0} communes in the database.'.format(len(communes)))
+
     workers = []
-    def removeDeadWorkers(waitTime):
+    def checkForDeadWorkers(waitTime):
+        mainLogger.debug('Checking for dead workers.')
+        mainLogger.debug('Workers: {0}'.format(len(workers)))
+
         while len(workers) >= maxWorkerCount:
             time.sleep(waitTime)
             [workers.remove(w) for w in workers[:] if not w.isAlive()]
 
     pageNumber = 1
     for commune in communes:
+        mainLogger.debug('Importing address data for "{0}" commune.'.format(commune.name.encode('utf-8')))
 
         while True:
             addressData = getAddressChunksInCommune(commune, pageNumber, chunkSize)
 
-            removeDeadWorkers(1)
+            checkForDeadWorkers(1)
 
             worker = threading.Thread(target=processAddresses, args=(addressData, Session()))
             workers.append(worker)
@@ -190,18 +233,24 @@ def importAddressInformation(maxWorkerCount, chunkSize):
                 break
             pageNumber = pageNumber + 1
 
-    removeDeadWorkers(3)
+    checkForDeadWorkers(3)
 
     session.close()
 
+    mainLogger.debug('Ending the address import procedure.')
+
 def main(args):
+    mainLogger.info('Application starting.')
+
     maxWorkerCount = int(arguments['--maxworkercount'])
 
     mainLogger.info('Application arguments: \n{0}'.format(args))
 
-    #importCommuneInformation()
-    #importDistrictInformation()
-    #importAddressInformation(maxWorkerCount, args['--chunksize'])
+    importCommuneInformation()
+    importAreaInformation()
+    importAddressInformation(maxWorkerCount, args['--chunksize'])
+
+    mainLogger.info('Application ending.')
 
 if __name__ == "__main__":
     arguments = docopt(__doc__)
