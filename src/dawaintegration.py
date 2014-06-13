@@ -161,6 +161,8 @@ def getAddressChunksInCommune(commune, pageNumber, chunkSize):
     return output
 
 def processAddresses(addresses, session):
+    logger = logging.getLogger('worker: {0}'.format(threading.current_thread().name))
+
     for address in addresses:
         accessAddress = address["adgangsadresse"]
         houseunit = session.query(Houseunit).filter_by(ADGANGSADRESSE_UUID = accessAddress['id']).first()
@@ -189,6 +191,7 @@ def processAddresses(addresses, session):
 
                 session.add(houseunit)
             except:
+                logger.error('Encountered erroneous record with "adgangsadresse id" of {0}'.format(accessAddress['id']))
                 continue
         else:
             houseunit.DOORCOUNT = houseunit.DOORCOUNT + 1
@@ -215,8 +218,8 @@ def importAddressInformation(maxWorkerCount, chunkSize):
             time.sleep(waitTime)
             [workers.remove(w) for w in workers[:] if not w.isAlive()]
 
-    pageNumber = 1
     for commune in communes:
+        pageNumber = 1
         mainLogger.debug('Importing address data for "{0}" commune.'.format(commune.name.encode('utf-8')))
 
         while True:
