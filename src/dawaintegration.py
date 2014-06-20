@@ -123,7 +123,6 @@ def importAreaInformation():
         area.AREATYPEID = 'POST'
         area.AREANAME = element['navn']
         area.AREACODE = element['nr']
-# TODO fix this error
         area.KOMMUNEID = element['kommuner'][0]['kode']
         area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
 
@@ -180,19 +179,26 @@ def processAddresses(addresses, session):
                 houseNumber = re.findall(r'\d+', houseID)[0]
                 houseunit.EQUALNO = int(houseNumber) % 2
 
-                coordinates = accessAddress['adgangspunkt']['koordinater']
-                houseunit.X = coordinates[0]
-                houseunit.Y = coordinates[1]
+                c = accessAddress['adgangspunkt']['koordinater']
+                if c:
+                    houseunit.X, houseunit.Y = c[0], c[1]
+                else:
+                    houseunit.X, houseunit.Y = None, None
 
                 houseunit.DOORCOUNT = 1
-                houseunit.ZIP = accessAddress['postnummer']['nr']
 
-                if accessAddress['sogn'] is None:
+                postNumber = accessAddress['postnummer']['nr']
+                if postNumber is None:
+                    raise
+                houseunit.ZIP = postNumber
+
+                parish = accessAddress['sogn']
+                if parish:
+                    houseunit.SOGNENR = parish['kode']
+                    houseunit.SOGNENAVN = parish['navn']
+                else:
                     houseunit.SOGNENR = 9999
                     houseunit.SOGNENAVN = 'Ukendt (Sogn) Sogn'
-                else:
-                    houseunit.SOGNENR = accessAddress['sogn']['kode']
-                    houseunit.SOGNENAVN = accessAddress['sogn']['navn']
 
                 session.add(houseunit)
             except:
