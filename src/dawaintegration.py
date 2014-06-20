@@ -105,7 +105,7 @@ def importAreaInformation():
         area.AREATYPEID = 'SOGN'
         area.AREANAME = element['navn']
         area.AREACODE = element['kode']
-        area.KOMMUNEID = element['kode']
+        area.KOMMUNEID = 9999
         area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
 
         districts.append(area)
@@ -124,6 +124,24 @@ def importAreaInformation():
         area.AREANAME = element['navn']
         area.AREACODE = element['nr']
         area.KOMMUNEID = element['kommuner'][0]['kode']
+        area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
+
+        districts.append(area)
+
+    mainLogger.debug('Done.')
+
+    mainLogger.debug('Importing electoral areas...')
+
+    response = requests.get(config.SERVER_URL + 'opstillingskredse')
+    data = response.json()
+
+    for element in data:
+        area = Area()
+
+        area.AREATYPEID = 'VALG'
+        area.AREANAME = element['navn']
+        area.AREACODE = element['kode']
+        area.KOMMUNEID = 9999
         area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
 
         districts.append(area)
@@ -199,6 +217,12 @@ def processAddresses(addresses, session):
                 else:
                     houseunit.SOGNENR = 9999
                     houseunit.SOGNENAVN = 'Ukendt (Sogn) Sogn'
+
+                valgkreds = accessAddress['opstillingskreds']
+                if valgkreds:
+                    houseunit.valgkreds = int(valgkreds['kode'])
+                else:
+                    houseunit.valgkreds = 9999
 
                 session.add(houseunit)
             except:
