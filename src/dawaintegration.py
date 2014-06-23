@@ -86,7 +86,7 @@ def importAreaInformation():
 
         area.AREATYPEID = 'KOM'
         area.AREANAME = element['navn']
-        area.AREACODE = element['kode']
+        area.AREACODE = int(element['kode'])
         area.KOMMUNEID = element['kode']
         area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
 
@@ -104,7 +104,7 @@ def importAreaInformation():
 
         area.AREATYPEID = 'SOGN'
         area.AREANAME = element['navn']
-        area.AREACODE = element['kode']
+        area.AREACODE = int(element['kode'])
         area.KOMMUNEID = 9999
         area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
 
@@ -122,7 +122,8 @@ def importAreaInformation():
 
         area.AREATYPEID = 'POST'
         area.AREANAME = element['navn']
-        area.AREACODE = element['nr']
+        area.AREACODE = int(element['nr'])
+#TODO multiple kommunes same postal code?
         area.KOMMUNEID = element['kommuner'][0]['kode']
         area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
 
@@ -140,7 +141,7 @@ def importAreaInformation():
 
         area.AREATYPEID = 'VALG'
         area.AREANAME = element['navn']
-        area.AREACODE = element['kode']
+        area.AREACODE = int(element['kode'])
         area.KOMMUNEID = 9999
         area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
 
@@ -158,11 +159,11 @@ def importAreaInformation():
     mainLogger.debug('Ending the area import procedure.')
 
 def getAddressChunksInCommune(commune, pageNumber, chunkSize):
-    mainLogger.debug('Starting the procedure to query a chunk of address data.')
-    mainLogger.debug('Commune id: {0}'.format(commune.id))
-    mainLogger.debug('Commune name: {0}'.format(commune.name.encode('utf-8')))
-    mainLogger.debug('Page number: {0}'.format(pageNumber))
-    mainLogger.debug('Chunk size: {0}'.format(chunkSize))
+    mainLogger.debug('Starting the procedure to query a chunk of address data.\n
+                    Commune id: {0}\n
+                    Commune name: {1}\n
+                    Page number: {2}'
+                    .format(commune.id, commune.name.encode('utf-8'), pageNumber))
 
     url = config.SERVER_URL + 'adresser'
     parameters = {'kommunekode': commune.id, 'side': pageNumber, 'per_side': chunkSize}
