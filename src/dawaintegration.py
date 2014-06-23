@@ -177,62 +177,70 @@ def getAddressChunksInCommune(commune, pageNumber, chunkSize):
 
     return output
 
-def processAddresses(addresses, session):
+def processCommune(commune, chunkSize, session):
     logger = logging.getLogger('worker: {0}'.format(threading.current_thread().name))
 
-    for address in addresses:
-        accessAddress = address["adgangsadresse"]
-        houseunit = session.query(Houseunit).filter_by(ADGANGSADRESSE_UUID = accessAddress['id']).first()
-        if houseunit is None:
-            try:
-                houseunit = Houseunit()
+    pageNumber = 1
+    while True:
+        addresses = getAddressChunksInCommune(commune, pageNumber, chunkSize)
 
-                houseunit.ADGANGSADRESSE_UUID = accessAddress['id']
-                houseunit.KOMMUNEID = accessAddress['kommune']['kode']
-                houseunit.ROADID = accessAddress['vejstykke']['kode']
+        if len(addresses) == 0:
+            break
+        pageNumber = pageNumber + 1
 
-                houseID = accessAddress['husnr']
-                houseunit.HOUSEID = houseID
+        for address in addresses:
+            accessAddress = address["adgangsadresse"]
+            houseunit = session.query(Houseunit).filter_by(ADGANGSADRESSE_UUID = accessAddress['id']).first()
+            if houseunit is None:
+                try:
+                    houseunit = Houseunit()
 
-                houseNumber = re.findall(r'\d+', houseID)[0]
-                houseunit.EQUALNO = int(houseNumber) % 2
+                    houseunit.ADGANGSADRESSE_UUID = accessAddress['id']
+                    houseunit.KOMMUNEID = accessAddress['kommune']['kode']
+                    houseunit.ROADID = accessAddress['vejstykke']['kode']
 
-                c = accessAddress['adgangspunkt']['koordinater']
-                if c:
-                    houseunit.X, houseunit.Y = c[0], c[1]
-                else:
-                    houseunit.X, houseunit.Y = None, None
+                    houseID = accessAddress['husnr']
+                    houseunit.HOUSEID = houseID
 
-                houseunit.DOORCOUNT = 1
+                    houseNumber = re.findall(r'\d+', houseID)[0]
+                    houseunit.EQUALNO = int(houseNumber) % 2
 
-                postNumber = accessAddress['postnummer']['nr']
-                if postNumber is None:
-                    raise
-                houseunit.ZIP = postNumber
+                    c = accessAddress['adgangspunkt']['koordinater']
+                    if c:
+                        houseunit.X, houseunit.Y = c[0], c[1]
+                    else:
+                        houseunit.X, houseunit.Y = None, None
 
-                parish = accessAddress['sogn']
-                if parish:
-                    houseunit.SOGNENR = parish['kode']
-                    houseunit.SOGNENAVN = parish['navn']
-                else:
-                    houseunit.SOGNENR = 9999
-                    houseunit.SOGNENAVN = 'Ukendt (Sogn) Sogn'
+                    houseunit.DOORCOUNT = 1
 
-                valgkreds = accessAddress['opstillingskreds']
-                if valgkreds:
-                    houseunit.valgkreds = int(valgkreds['kode'])
-                else:
-                    houseunit.valgkreds = 9999
+                    postNumber = accessAddress['postnummer']['nr']
+                    if postNumber is None:
+                        raise
+                    houseunit.ZIP = postNumber
 
-                session.add(houseunit)
-            except:
-                logger.error('Encountered erroneous record with "adgangsadresse id" of {0}'.format(accessAddress['id']))
-                logger.error(accessAddress)
-                continue
-        else:
-            houseunit.DOORCOUNT = houseunit.DOORCOUNT + 1
+                    parish = accessAddress['sogn']
+                    if parish:
+                        houseunit.SOGNENR = parish['kode']
+                        houseunit.SOGNENAVN = parish['navn']
+                    else:
+                        houseunit.SOGNENR = 9999
+                        houseunit.SOGNENAVN = 'Ukendt (Sogn) Sogn'
 
-    session.commit()
+                    valgkreds = accessAddress['opstillingskreds']
+                    if valgkreds:
+                        houseunit.valgkreds = int(valgkreds['kode'])
+                    else:
+                        houseunit.valgkreds = 9999
+
+                    session.add(houseunit)
+                except:
+                    logger.error('Encountered erroneous record with "adgangsadresse id" of {0}'.format(accessAddress['id']))
+                    logger.error(accessAddress)
+                    continue
+            else:
+                houseunit.DOORCOUNT = houseunit.DOORCOUNT + 1
+
+        session.commit()
 
     session.close()
 
@@ -242,40 +250,31 @@ def importAddressInformation(maxWorkerCount, chunkSize):
     session = Session()
 
     communes = session.query(Kommune).all()
+    session.close()
 
     mainLogger.debug('Found {0} communes in the database.'.format(len(communes)))
 
     workers = []
-    def checkForDeadWorkers(waitTime):
+    def checkForDeadWorkers():
+        SLEEP_TIME = 10
         mainLogger.debug('Checking for dead workers.')
         mainLogger.debug('Workers: {0}'.format(len(workers)))
 
         while len(workers) >= maxWorkerCount:
-            time.sleep(waitTime)
+            time.sleep(SLEEP_TIME)
             [workers.remove(w) for w in workers[:] if not w.isAlive()]
 
     for commune in communes:
-        mainLogger.debug('Importing address data for "{0}" commune.'.format(commune.name.encode('utf-8')))
+        checkForDeadWorkers()
 
-        pageNumber = 1
+        mainLogger.debug('Assigning "{0}" commune to be processed.'.format(commune.name.encode('utf-8')))
 
-        while True:
-            addressData = getAddressChunksInCommune(commune, pageNumber, chunkSize)
+        worker = threading.Thread(target=processCommune, args=(commune, chunkSize, Session()))
+        workers.append(worker)
+        worker.daemon = True
+        worker.start()
 
-            checkForDeadWorkers(1)
-
-            worker = threading.Thread(target=processAddresses, args=(addressData, Session()))
-            workers.append(worker)
-            worker.daemon = True
-            worker.start()
-
-            if len(addressData) == 0:
-                break
-            pageNumber = pageNumber + 1
-
-    checkForDeadWorkers(3)
-
-    session.close()
+    checkForDeadWorkers()
 
     mainLogger.debug('Ending the address import procedure.')
 
