@@ -159,10 +159,10 @@ def importAreaInformation():
     mainLogger.debug('Ending the area import procedure.')
 
 def getAddressChunksInCommune(commune, pageNumber, chunkSize):
-    mainLogger.debug('Starting the procedure to query a chunk of address data.\n
-                    Commune id: {0}\n
-                    Commune name: {1}\n
-                    Page number: {2}'
+    mainLogger.debug('''Starting the procedure to query a chunk of address data.
+                    Commune id: {0}
+                    Commune name: {1}
+                    Page number: {2}'''
                     .format(commune.id, commune.name.encode('utf-8'), pageNumber))
 
     url = config.SERVER_URL + 'adresser'
@@ -199,6 +199,8 @@ def processCommune(commune, chunkSize, session):
                     houseunit.ADGANGSADRESSE_UUID = accessAddress['id']
                     houseunit.KOMMUNEID = accessAddress['kommune']['kode']
                     houseunit.ROADID = accessAddress['vejstykke']['kode']
+
+                    houseunit.roadName = accessAddress['vejstykke']['navn']
 
                     houseID = accessAddress['husnr']
                     houseunit.HOUSEID = houseID
