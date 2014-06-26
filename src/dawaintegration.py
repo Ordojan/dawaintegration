@@ -239,9 +239,8 @@ def processCommune(commune, chunkSize, session):
                         houseunit.valgkreds = 9999
 
                     session.add(houseunit)
-                except Exception as e:
+                except:
                     logger.error('Encountered erroneous record with "adgangsadresse id" of {0}'.format(accessAddress['id']))
-                    logger.error(e)
                     logger.error(accessAddress)
                     continue
             else:
