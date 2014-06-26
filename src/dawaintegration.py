@@ -198,8 +198,11 @@ def processCommune(commune, chunkSize, session):
 
                     houseunit.ADGANGSADRESSE_UUID = accessAddress['id']
                     houseunit.KOMMUNEID = accessAddress['kommune']['kode']
-                    houseunit.ROADID = accessAddress['vejstykke']['kode']
 
+                    roadID = accessAddress['vejstykke']['kode']
+                    if roadID is None:
+                        raise
+                    houseunit.ROADID = roadID
                     houseunit.roadName = accessAddress['vejstykke']['navn']
 
                     houseID = accessAddress['husnr']
@@ -236,8 +239,9 @@ def processCommune(commune, chunkSize, session):
                         houseunit.valgkreds = 9999
 
                     session.add(houseunit)
-                except:
+                except Exception as e:
                     logger.error('Encountered erroneous record with "adgangsadresse id" of {0}'.format(accessAddress['id']))
+                    logger.error(e)
                     logger.error(accessAddress)
                     continue
             else:
@@ -267,10 +271,11 @@ def importAddressInformation(maxWorkerCount, chunkSize):
             time.sleep(SLEEP_TIME)
             [workers.remove(w) for w in workers[:] if not w.isAlive()]
 
-    for commune in communes:
+    for index, commune in enumerate(communes):
         checkForDeadWorkers()
 
         mainLogger.debug('Assigning "{0}" commune to be processed.'.format(commune.name.encode('utf-8')))
+        mainLogger.info('{0} out of {1} communes processed.'.format(index + 1, len(communes) + 1))
 
         worker = threading.Thread(target=processCommune, args=(commune, chunkSize, Session()))
         workers.append(worker)
