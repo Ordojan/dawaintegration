@@ -39,6 +39,9 @@ class Area(Base):
     __tablename__ = 'SAM_AREA'
     __table_args__ = {'autoload':True}
 
+    def __eq__(self, other):
+        return int(self.AREACODE) == int(other.AREACODE)
+
 class Kommune(Base):
     __tablename__ = 'SAM_KOMMUNE'
     __table_args__ = {'autoload':True}
@@ -96,6 +99,10 @@ def importAreaInformation():
 
     mainLogger.debug('Importing parishes...')
 
+    newAreas = []
+
+    areas = session.query(Area).filter_by(AREATYPEID = 'SOGN').all()
+
     response = requests.get(config.SERVER_URL + 'sogne')
     data = response.json()
 
@@ -108,7 +115,13 @@ def importAreaInformation():
         area.KOMMUNEID = 9999
         area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
 
-        districts.append(area)
+        if area in areas:
+            continue
+
+        newAreas.append(area)
+
+    session.add_all(newAreas)
+    session.commit()
 
     mainLogger.debug('Done.')
 
