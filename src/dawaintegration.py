@@ -77,9 +77,12 @@ def importAreaInformation():
     mainLogger.debug('Starting the area import procedure.')
 
     session = Session()
-    districts = []
 
     mainLogger.debug('Importing communes...')
+
+    newAreas = []
+
+    areas = session.query(Area).filter_by(AREATYPEID = 'KOM').all()
 
     response = requests.get(config.SERVER_URL + 'kommuner')
     data = response.json()
@@ -87,13 +90,22 @@ def importAreaInformation():
     for element in data:
         area = Area()
 
+        area.AREACODE = int(element['kode'])
+
+        if area in areas:
+            continue
+
         area.AREATYPEID = 'KOM'
         area.AREANAME = element['navn']
-        area.AREACODE = int(element['kode'])
         area.KOMMUNEID = element['kode']
         area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
 
-        districts.append(area)
+        newAreas.append(area)
+
+    mainLogger.debug('{0} new commune(s) found.'.format(len(newAreas)))
+
+    session.add_all(newAreas)
+    session.commit()
 
     mainLogger.debug('Done.')
 
@@ -109,16 +121,24 @@ def importAreaInformation():
     for element in data:
         area = Area()
 
-        area.AREATYPEID = 'SOGN'
-        area.AREANAME = element['navn']
         area.AREACODE = int(element['kode'])
-        area.KOMMUNEID = 9999
-        area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
 
         if area in areas:
             continue
 
+        area.AREATYPEID = 'SOGN'
+        area.AREANAME = element['navn']
+
+        url = config.SERVER_URL + 'adgangsadresser'
+        parameters = {'sognekode': area.AREACODE, 'side': 1, 'per_side': 1}
+        response = requests.get(url, params=parameters)
+        area.KOMMUNEID = response.json()[0]['kommune']['kode']
+
+        area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
+
         newAreas.append(area)
+
+    mainLogger.debug('{0} new parishe(s) found.'.format(len(newAreas)))
 
     session.add_all(newAreas)
     session.commit()
@@ -127,24 +147,41 @@ def importAreaInformation():
 
     mainLogger.debug('Importing postal numbers...')
 
+    newAreas = []
+
+    areas = session.query(Area).filter_by(AREATYPEID = 'POST').all()
+
     response = requests.get(config.SERVER_URL + 'postnumre')
     data = response.json()
 
     for element in data:
         area = Area()
 
+        area.AREACODE = int(element['nr'])
+
+        if area in areas:
+            continue
+
         area.AREATYPEID = 'POST'
         area.AREANAME = element['navn']
-        area.AREACODE = int(element['nr'])
 #TODO multiple kommunes same postal code?
         area.KOMMUNEID = element['kommuner'][0]['kode']
         area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
 
-        districts.append(area)
+        newAreas.append(area)
+
+    mainLogger.debug('{0} new postal number(s) found.'.format(len(newAreas)))
+
+    session.add_all(newAreas)
+    session.commit()
 
     mainLogger.debug('Done.')
 
     mainLogger.debug('Importing electoral areas...')
+
+    newAreas = []
+
+    areas = session.query(Area).filter_by(AREATYPEID = 'VALG').all()
 
     response = requests.get(config.SERVER_URL + 'opstillingskredse')
     data = response.json()
@@ -152,20 +189,24 @@ def importAreaInformation():
     for element in data:
         area = Area()
 
+        area.AREACODE = int(element['kode'])
+
+        if area in areas:
+            continue
+
         area.AREATYPEID = 'VALG'
         area.AREANAME = element['navn']
-        area.AREACODE = int(element['kode'])
         area.KOMMUNEID = 9999
         area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
 
-        districts.append(area)
+        newAreas.append(area)
+
+    mainLogger.debug('{0} new elecroral district(s) found.'.format(len(newAreas)))
+
+    session.add_all(newAreas)
+    session.commit()
 
     mainLogger.debug('Done.')
-
-    mainLogger.debug('{0} areas found.'.format(len(districts)))
-
-    session.add_all(districts)
-    session.commit()
 
     session.close()
 
