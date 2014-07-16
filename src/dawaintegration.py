@@ -4,8 +4,7 @@
 """DAWA integration
 
 Usage:
-  dawaintegration.py [--chunksize=<size>]
-  dawaintegration.py [--maxworkercount=<count>]
+  dawaintegration.py [--chunksize=<size>] [--maxworkercount=<count>]
 
 Options:
   -h --help     Show this screen.
