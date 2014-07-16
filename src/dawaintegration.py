@@ -114,6 +114,8 @@ def importAreaInformation():
 
     areas = session.query(Area).filter_by(AREATYPEID = 'SOGN').all()
 
+    [session.delete(area) for area in areas if area.KOMMUNEID == 9999]
+
     response = requests.get(config.SERVER_URL + 'sogne')
     data = response.json()
 
@@ -131,7 +133,10 @@ def importAreaInformation():
         url = config.SERVER_URL + 'adgangsadresser'
         parameters = {'sognekode': area.AREACODE, 'side': 1, 'per_side': 1}
         response = requests.get(url, params=parameters)
-        area.KOMMUNEID = response.json()[0]['kommune']['kode']
+        if response.json():
+            area.KOMMUNEID = response.json()[0]['kommune']['kode']
+        else:
+            area.KOMMUNEID = 9999
 
         area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
 
