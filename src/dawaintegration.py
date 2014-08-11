@@ -267,7 +267,10 @@ def processCommune(commune, chunkSize, session):
                     houseunit.HOUSEID = houseID
 
                     houseNumber = re.findall(r'\d+', houseID)[0]
-                    houseunit.EQUALNO = int(houseNumber) % 2
+                    if int(houseNumber) % 2 == 0:
+                        houseunit.EQUALNO = 1
+                    else:
+                        houseunit.EQUALNO = 0
 
                     c = accessAddress['adgangspunkt']['koordinater']
                     if c:
