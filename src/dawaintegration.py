@@ -4,12 +4,15 @@
 """DAWA integration
 
 Usage:
-  dawaintegration.py [--chunksize=<size>] [--maxworkercount=<count>]
+  dawaintegration.py import [options]
+  dawaintegration.py import communes <communeid>... [options]
 
 Options:
   -h --help     Show this screen.
   --chunksize=<size>  size of the data chunks that will be requested from DAWA [default: 10000].
   --maxworkercount=<count>  the maximum number of workers isnerting records into the database [default: 3].
+  --importareas    imports the areas
+  --importcommunes    imports communes
 """
 from docopt import docopt
 
@@ -311,12 +314,16 @@ def processCommune(commune, chunkSize, session):
 
     session.close()
 
-def importAddressInformation(maxWorkerCount, chunkSize):
+def importAddressInformation(maxWorkerCount, chunkSize, communeIds):
     mainLogger.debug('Starting the address import procedure.')
 
     session = Session()
 
-    communes = session.query(Kommune).all()
+    if communeIds:
+        communes = session.query(Kommune).filter(Kommune.id.in_(ids)).all()
+    else:
+        communes = session.query(Kommune).all()
+
     session.close()
 
     mainLogger.debug('Found {0} communes in the database.'.format(len(communes)))
@@ -353,9 +360,14 @@ def main(args):
 
     mainLogger.info('Application arguments: \n{0}'.format(args))
 
-    importCommuneInformation()
-    importAreaInformation()
-    importAddressInformation(maxWorkerCount, args['--chunksize'])
+    if args['--importcommunes']:
+        importCommuneInformation()
+
+    if args['--importareas']:
+        importAreaInformation()
+
+    communeIds = [int(id) for id in args['<communeid>']]
+    importAddressInformation(maxWorkerCount, args['--chunksize'], communeIds)
 
     mainLogger.info('Application ending.')
 
