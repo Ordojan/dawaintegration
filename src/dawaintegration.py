@@ -320,7 +320,7 @@ def importAddressInformation(maxWorkerCount, chunkSize, communeIds):
     session = Session()
 
     if communeIds:
-        communes = session.query(Kommune).filter(Kommune.id.in_(ids)).all()
+        communes = session.query(Kommune).filter(Kommune.id.in_(communeIds)).all()
     else:
         communes = session.query(Kommune).all()
 
