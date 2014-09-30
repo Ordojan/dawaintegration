@@ -33,9 +33,11 @@ Base = declarative_base(engine)
 metadata = Base.metadata
 Session = sessionmaker(bind=engine, autocommit=False, autoflush=True)
 
+
 class Houseunit(Base):
     __tablename__ = 'SAM_HOUSEUNITS'
     __table_args__ = {'autoload':True}
+
 
 class Area(Base):
     __tablename__ = 'SAM_AREA'
@@ -44,6 +46,7 @@ class Area(Base):
     def __eq__(self, other):
         return int(self.AREACODE) == int(other.AREACODE)
 
+
 class Kommune(Base):
     __tablename__ = 'SAM_KOMMUNE'
     __table_args__ = {'autoload':True}
@@ -51,6 +54,7 @@ class Kommune(Base):
     def __init__(self, id=None, name=None):
         self.id = id
         self.name = name
+
 
 def importCommuneInformation():
     mainLogger.debug('Starting the commune import procedure.')
@@ -74,6 +78,7 @@ def importCommuneInformation():
     session.close()
 
     mainLogger.debug('Ending the commune import procedure.')
+
 
 def importAreaInformation():
     mainLogger.debug('Starting the area import procedure.')
@@ -219,6 +224,7 @@ def importAreaInformation():
 
     mainLogger.debug('Ending the area import procedure.')
 
+
 def getAddressChunksInCommune(commune, pageNumber, chunkSize):
     mainLogger.debug('''Starting the procedure to query a chunk of address data.
                     Commune id: {0}
@@ -238,6 +244,7 @@ def getAddressChunksInCommune(commune, pageNumber, chunkSize):
     mainLogger.debug('Ending the procedure to query a chunk of address data.')
 
     return output
+
 
 def processCommune(commune, chunkSize, session):
     logger = logging.getLogger('worker: {0}'.format(threading.current_thread().name))
@@ -314,6 +321,7 @@ def processCommune(commune, chunkSize, session):
 
     session.close()
 
+
 def importAddressInformation(maxWorkerCount, chunkSize, communeIds):
     mainLogger.debug('Starting the address import procedure.')
 
@@ -326,9 +334,10 @@ def importAddressInformation(maxWorkerCount, chunkSize, communeIds):
 
     session.close()
 
-    mainLogger.debug('Found {0} communes in the database.'.format(len(communes)))
+    mainLogger.debug('Found {0} commune(s) in the database.'.format(len(communes)))
 
     workers = []
+
     def checkForDeadWorkers():
         SLEEP_TIME = 10
         mainLogger.debug('Checking for dead workers.')
@@ -342,16 +351,23 @@ def importAddressInformation(maxWorkerCount, chunkSize, communeIds):
         checkForDeadWorkers()
 
         mainLogger.debug('Assigning "{0}" commune to be processed.'.format(commune.name.encode('utf-8')))
-        mainLogger.info('{0} out of {1} communes processed.'.format(index + 1, len(communes) + 1))
+        mainLogger.info('{0} out of {1} communes processed.'.format(index, len(communes)))
 
         worker = threading.Thread(target=processCommune, args=(commune, chunkSize, Session()))
         workers.append(worker)
         worker.daemon = True
         worker.start()
 
-    checkForDeadWorkers()
+    mainLogger.debug('Waiting for workers to finish.')
+    while True:
+        [workers.remove(w) for w in workers[:] if not w.isAlive()]
+        mainLogger.debug('Workers: {0}'.format(len(workers)))
+        if len(workers) == 0:
+            break
+        time.sleep(20)
 
     mainLogger.debug('Ending the address import procedure.')
+
 
 def main(args):
     mainLogger.info('Application starting.')
