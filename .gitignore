@@ -2,7 +2,12 @@
 *.log
 *.lprof
 
+
 /bin
 /include
 /lib
 /local
+
+# idea files #
+.idea/
+*.iml
