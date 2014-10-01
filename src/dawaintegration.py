@@ -141,13 +141,17 @@ def importAreaInformation():
         url = config.SERVER_URL + 'adgangsadresser'
         parameters = {'sognekode': area.AREACODE, 'side': 1, 'per_side': 1}
         response = requests.get(url, params=parameters)
-        if response.json():
-            area.KOMMUNEID = response.json()[0]['kommune']['kode']
-        else:
-            area.KOMMUNEID = 9999
+        try:
+            if response.json():
+                area.KOMMUNEID = response.json()[0]['kommune']['kode']
+            else:
+                area.KOMMUNEID = 9999
+        except ValueError:
+            continue
 
         area.AREAID = "{0}{1}".format(area.AREATYPEID, area.AREACODE)
 
+        mainLogger.debug('Added new parish {0}'.format(area.AREANAME.encode('utf-8')))
         newAreas.append(area)
 
     mainLogger.debug('{0} new parishe(s) found.'.format(len(newAreas)))
